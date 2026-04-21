@@ -198,9 +198,19 @@ select {
   grid-column: 1 / -1;
 }
 
-.chart-panel canvas {
+.chart-canvas-wrap {
+  position: relative;
   width: 100%;
   height: 280px;
+  min-height: 280px;
+  max-height: 280px;
+  overflow: hidden;
+}
+
+.chart-panel canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 @media (max-width: 1080px) {

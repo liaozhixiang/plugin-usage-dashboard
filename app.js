@@ -557,6 +557,7 @@ function chartOptions(maxY) {
   return {
     responsive: true,
     maintainAspectRatio: false,
+    resizeDelay: 120,
     animation: {
       duration: 450,
     },
