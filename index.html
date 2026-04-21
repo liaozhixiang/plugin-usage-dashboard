@@ -28,12 +28,12 @@
         <section class="panel">
           <h2>NX 工具选择</h2>
           <input id="tool-search" type="text" placeholder="搜索工具名" />
-          <div class="panel-row">
-            <button id="select-all-tools" class="ghost">全选</button>
-            <button id="clear-tools" class="ghost">清空</button>
-          </div>
           <div id="tool-list" class="list-box empty">请先选择文件夹</div>
-          <button id="analyze-tools" class="primary block">分析所选工具</button>
+        </section>
+
+        <section class="panel">
+          <h2>管理号</h2>
+          <div id="manager-list" class="list-box empty">请选择一个 NX 工具</div>
         </section>
 
         <section class="panel compact">
@@ -95,11 +95,19 @@
             </div>
           </article>
           <article class="panel chart-panel">
-            <h2>项目总时长 Top 10</h2>
+            <h2>管理号总时长 Top 10</h2>
             <div class="chart-canvas-wrap">
               <canvas id="project-duration-chart"></canvas>
             </div>
           </article>
+        </section>
+
+        <section class="panel usage-panel">
+          <div class="usage-header">
+            <h2>管理号使用明细</h2>
+            <span id="usage-summary">未选择管理号</span>
+          </div>
+          <div id="usage-list" class="usage-list empty-state">请选择管理号查看明细</div>
         </section>
       </section>
     </main>

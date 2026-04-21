@@ -1,7 +1,8 @@
 const state = {
   records: [],
   toolEntries: new Map(),
-  selectedTools: new Set(),
+  selectedTool: null,
+  selectedManagerId: null,
   parsedCache: new Map(),
   badLineCount: 0,
   totalFiles: 0,
@@ -18,9 +19,7 @@ const dom = {
   folderInput: document.getElementById("folder-input"),
   toolSearch: document.getElementById("tool-search"),
   toolList: document.getElementById("tool-list"),
-  selectAllTools: document.getElementById("select-all-tools"),
-  clearTools: document.getElementById("clear-tools"),
-  analyzeTools: document.getElementById("analyze-tools"),
+  managerList: document.getElementById("manager-list"),
   dateFrom: document.getElementById("date-from"),
   dateTo: document.getElementById("date-to"),
   applyFilter: document.getElementById("apply-filter"),
@@ -34,21 +33,44 @@ const dom = {
   kpiActiveUsers: document.getElementById("kpi-active-users"),
   kpiP90Duration: document.getElementById("kpi-p90-duration"),
   kpiDailyAvg: document.getElementById("kpi-daily-avg"),
+  usageSummary: document.getElementById("usage-summary"),
+  usageList: document.getElementById("usage-list"),
 };
+
+const centerTextPlugin = {
+  id: "centerTextPlugin",
+  afterDraw(chart) {
+    const text = chart?.config?.options?.plugins?.centerText?.text;
+    if (!text) {
+      return;
+    }
+
+    const { ctx } = chart;
+    const meta = chart.getDatasetMeta(0);
+    const point = meta?.data?.[0];
+    if (!point) {
+      return;
+    }
+
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#104a3c";
+    ctx.font = "700 28px Space Grotesk";
+    ctx.fillText(text, point.x, point.y - 6);
+    ctx.fillStyle = "#5a6650";
+    ctx.font = "400 12px Chivo";
+    ctx.fillText("成功率", point.x, point.y + 18);
+    ctx.restore();
+  },
+};
+
+Chart.register(centerTextPlugin);
 
 dom.pickFolderBtn.addEventListener("click", pickFolder);
 dom.folderInput.addEventListener("change", handleFolderUpload);
 dom.toolSearch.addEventListener("input", renderToolList);
-dom.selectAllTools.addEventListener("click", () => {
-  state.selectedTools = new Set(state.toolEntries.keys());
-  renderToolList();
-});
-dom.clearTools.addEventListener("click", () => {
-  state.selectedTools.clear();
-  renderToolList();
-});
 dom.applyFilter.addEventListener("click", refreshDashboard);
-dom.analyzeTools.addEventListener("click", analyzeSelectedTools);
 
 async function pickFolder() {
   if (!window.showDirectoryPicker) {
@@ -126,11 +148,14 @@ function normalizeToolName(filename) {
 }
 
 function finalizeRegistration() {
-  state.selectedTools = new Set(state.toolEntries.keys());
+  state.selectedTool = null;
+  state.selectedManagerId = null;
   updateProgress();
   renderToolList();
+  renderManagerList([]);
+  renderUsageDetails([]);
   resetDashboard();
-  setStatus(`已读取 ${state.totalFiles} 个 txt 文件名，请选择工具后点击“分析所选工具”。`);
+  setStatus(`已读取 ${state.totalFiles} 个 txt 文件名，请点击一个 NX 工具开始分析。`);
 }
 
 function resetRuntimeForFolder() {
@@ -142,56 +167,54 @@ function resetRuntimeForFolder() {
 }
 
 async function analyzeSelectedTools() {
-  const tools = Array.from(state.selectedTools);
-  if (tools.length === 0) {
-    setStatus("请先至少选择一个 NX 工具。");
+  const toolName = state.selectedTool;
+  if (!toolName) {
+    setStatus("请先选择一个 NX 工具。");
     resetDashboard();
+    renderManagerList([]);
+    renderUsageDetails([]);
     return;
   }
 
   state.records = [];
   state.badLineCount = 0;
-  state.totalFiles = tools.length;
+  state.totalFiles = 1;
   state.processedFiles = 0;
   updateProgress();
-  setStatus("正在按所选工具解析 txt 数据...");
+  setStatus(`正在解析 ${toolName} 的 txt 数据...`);
 
-  for (const toolName of tools) {
-    const cached = state.parsedCache.get(toolName);
-    if (cached) {
-      state.records.push(...cached.records);
-      state.badLineCount += cached.badLineCount;
-      state.processedFiles += 1;
-      updateProgress();
-      continue;
-    }
-
-    const entry = state.toolEntries.get(toolName);
-    if (!entry) {
-      state.processedFiles += 1;
-      updateProgress();
-      continue;
-    }
-
-    let content = "";
-    if (entry.source === "handle") {
-      const file = await entry.ref.getFile();
-      content = await file.text();
-    } else {
-      content = await entry.ref.text();
-    }
-
-    const result = parseTextContent(toolName, content);
-    state.parsedCache.set(toolName, result);
-    state.records.push(...result.records);
-    state.badLineCount += result.badLineCount;
-
+  const cached = state.parsedCache.get(toolName);
+  if (cached) {
+    state.records = [...cached.records];
+    state.badLineCount = cached.badLineCount;
     state.processedFiles += 1;
+    updateProgress();
+  } else {
+    const entry = state.toolEntries.get(toolName);
+    if (entry) {
+      let content = "";
+      if (entry.source === "handle") {
+        const file = await entry.ref.getFile();
+        content = await file.text();
+      } else {
+        content = await entry.ref.text();
+      }
+
+      const result = parseTextContent(toolName, content);
+      state.parsedCache.set(toolName, result);
+      state.records = [...result.records];
+      state.badLineCount = result.badLineCount;
+    }
+
+    state.processedFiles = 1;
     updateProgress();
   }
 
+  const managerIds = getManagerIds(state.records);
+  state.selectedManagerId = managerIds[0] || null;
+  renderManagerList(managerIds);
   refreshDashboard();
-  setStatus(`分析完成，已解析 ${tools.length} 个工具。`);
+  setStatus(`分析完成，当前工具为 ${toolName}。`);
 }
 
 function parseTextContent(toolName, content) {
@@ -270,7 +293,8 @@ function formatDateKey(date) {
 function resetData() {
   state.records = [];
   state.toolEntries = new Map();
-  state.selectedTools = new Set();
+  state.selectedTool = null;
+  state.selectedManagerId = null;
   state.parsedCache = new Map();
   state.badLineCount = 0;
   state.totalFiles = 0;
@@ -296,26 +320,65 @@ function renderToolList() {
   dom.toolList.innerHTML = "";
 
   for (const tool of tools) {
-    const label = document.createElement("label");
-    label.className = "tool-item";
-
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.checked = state.selectedTools.has(tool);
-    checkbox.addEventListener("change", () => {
-      if (checkbox.checked) {
-        state.selectedTools.add(tool);
-      } else {
-        state.selectedTools.delete(tool);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `tool-item${state.selectedTool === tool ? " active" : ""}`;
+    button.addEventListener("click", async () => {
+      if (state.selectedTool === tool) {
+        return;
       }
+      state.selectedTool = tool;
+      state.selectedManagerId = null;
+      renderToolList();
+      await analyzeSelectedTools();
     });
 
-    const text = document.createElement("span");
-    text.textContent = tool;
+    const name = document.createElement("span");
+    name.className = "tool-item-name";
+    name.textContent = tool;
 
-    label.appendChild(checkbox);
-    label.appendChild(text);
-    dom.toolList.appendChild(label);
+    const meta = document.createElement("span");
+    meta.className = "tool-item-meta";
+    meta.textContent = ".txt";
+
+    button.appendChild(name);
+    button.appendChild(meta);
+    dom.toolList.appendChild(button);
+  }
+}
+
+function renderManagerList(managerIds) {
+  if (managerIds.length === 0) {
+    dom.managerList.classList.add("empty");
+    dom.managerList.textContent = state.selectedTool ? "当前工具没有管理号记录" : "请选择一个 NX 工具";
+    return;
+  }
+
+  dom.managerList.classList.remove("empty");
+  dom.managerList.innerHTML = "";
+
+  for (const managerId of managerIds) {
+    const count = state.records.filter((record) => record.projectId === managerId).length;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `manager-item${state.selectedManagerId === managerId ? " active" : ""}`;
+    button.addEventListener("click", () => {
+      state.selectedManagerId = managerId;
+      renderManagerList(managerIds);
+      refreshDashboard();
+    });
+
+    const name = document.createElement("span");
+    name.className = "manager-item-name";
+    name.textContent = managerId;
+
+    const meta = document.createElement("span");
+    meta.className = "manager-item-meta";
+    meta.textContent = `${count} 条`;
+
+    button.appendChild(name);
+    button.appendChild(meta);
+    dom.managerList.appendChild(button);
   }
 }
 
@@ -330,8 +393,8 @@ function resetDashboard() {
   dom.kpiActiveUsers.textContent = "0";
   dom.kpiP90Duration.textContent = "0 分钟";
   dom.kpiDailyAvg.textContent = "0";
-  renderDailyChart([]);
-  renderToolSuccessChart([]);
+  renderDailyChart([], []);
+  renderToolSuccessChart(0);
   renderProjectDurationChart([]);
 }
 
@@ -348,9 +411,10 @@ function refreshDashboard() {
   dom.kpiP90Duration.textContent = `${msToMinutes(metrics.p90DurationMs)} 分钟`;
   dom.kpiDailyAvg.textContent = `${metrics.avgDailyUsage.toFixed(1)}`;
 
-  renderDailyChart(metrics.dailyFrequency);
-  renderToolSuccessChart(metrics.toolSuccessRate);
+  renderDailyChart(metrics.dailyFrequency, metrics.dailySuccessFrequency);
+  renderToolSuccessChart(metrics.successRate);
   renderProjectDurationChart(metrics.projectDurationTop);
+  renderUsageDetails(filtered);
 }
 
 function getFilteredRecords() {
@@ -380,7 +444,7 @@ function computeMetrics(records) {
       p90DurationMs: 0,
       avgDailyUsage: 0,
       dailyFrequency: [],
-      toolSuccessRate: [],
+      dailySuccessFrequency: [],
       projectDurationTop: [],
     };
   }
@@ -390,7 +454,7 @@ function computeMetrics(records) {
 
   const activeUsers = new Set();
   const dailyCountMap = new Map();
-  const toolAgg = new Map();
+  const dailySuccessMap = new Map();
   const projectDurationMap = new Map();
   const successDurations = [];
 
@@ -398,13 +462,9 @@ function computeMetrics(records) {
     activeUsers.add(record.user);
 
     dailyCountMap.set(record.dateKey, (dailyCountMap.get(record.dateKey) || 0) + 1);
-
-    const toolBucket = toolAgg.get(record.tool) || { total: 0, success: 0 };
-    toolBucket.total += 1;
     if (record.isSuccess) {
-      toolBucket.success += 1;
+      dailySuccessMap.set(record.dateKey, (dailySuccessMap.get(record.dateKey) || 0) + 1);
     }
-    toolAgg.set(record.tool, toolBucket);
 
     projectDurationMap.set(
       record.projectId,
@@ -429,14 +489,12 @@ function computeMetrics(records) {
     .map(([date, count]) => ({ date, count }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  const avgDailyUsage = dailyFrequency.length === 0 ? 0 : total / dailyFrequency.length;
+  const dailySuccessFrequency = dailyFrequency.map(({ date }) => ({
+    date,
+    count: dailySuccessMap.get(date) || 0,
+  }));
 
-  const toolSuccessRate = Array.from(toolAgg.entries())
-    .map(([tool, bucket]) => ({
-      tool,
-      rate: bucket.total === 0 ? 0 : (bucket.success / bucket.total) * 100,
-    }))
-    .sort((a, b) => b.rate - a.rate);
+  const avgDailyUsage = dailyFrequency.length === 0 ? 0 : total / dailyFrequency.length;
 
   const projectDurationTop = Array.from(projectDurationMap.entries())
     .map(([projectId, duration]) => ({ projectId, duration }))
@@ -451,7 +509,7 @@ function computeMetrics(records) {
     p90DurationMs,
     avgDailyUsage,
     dailyFrequency,
-    toolSuccessRate,
+    dailySuccessFrequency,
     projectDurationTop,
   };
 }
@@ -469,9 +527,10 @@ function msToMinutes(ms) {
   return (ms / 60000).toFixed(1);
 }
 
-function renderDailyChart(data) {
+function renderDailyChart(data, successData) {
   const labels = data.map((item) => item.date);
   const values = data.map((item) => item.count);
+  const successValues = successData.map((item) => item.count);
 
   const config = {
     type: "line",
@@ -486,6 +545,14 @@ function renderDailyChart(data) {
           tension: 0.2,
           fill: true,
         },
+        {
+          label: "成功次数",
+          data: successValues,
+          borderColor: "#c97940",
+          backgroundColor: "rgba(201, 121, 64, 0.12)",
+          tension: 0.2,
+          fill: false,
+        },
       ],
     },
     options: chartOptions(),
@@ -494,24 +561,43 @@ function renderDailyChart(data) {
   state.charts.daily = upsertChart("daily-frequency-chart", state.charts.daily, config);
 }
 
-function renderToolSuccessChart(data) {
-  const labels = data.map((item) => item.tool);
-  const values = data.map((item) => item.rate.toFixed(1));
+function renderToolSuccessChart(rate) {
+  const safeRate = Math.max(0, Math.min(100, Number(rate) || 0));
+  const remainder = Math.max(0, 100 - safeRate);
 
   const config = {
-    type: "bar",
+    type: "doughnut",
     data: {
-      labels,
+      labels: ["成功", "其余"],
       datasets: [
         {
-          label: "成功率(%)",
-          data: values,
-          backgroundColor: "rgba(16, 74, 60, 0.75)",
-          borderRadius: 8,
+          data: [safeRate, remainder],
+          backgroundColor: ["#256d5a", "#e6ebe0"],
+          borderWidth: 0,
+          cutout: "76%",
+          circumference: 360,
         },
       ],
     },
-    options: chartOptions(100),
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      resizeDelay: 120,
+      animation: {
+        duration: 450,
+      },
+      plugins: {
+        legend: {
+          display: false,
+        },
+        tooltip: {
+          enabled: false,
+        },
+        centerText: {
+          text: `${safeRate.toFixed(1)}%`,
+        },
+      },
+    },
   };
 
   state.charts.toolSuccess = upsertChart("tool-success-chart", state.charts.toolSuccess, config);
@@ -603,4 +689,76 @@ function setStatus(message) {
 
 function updateProgress() {
   dom.fileProgress.textContent = `${state.processedFiles} / ${state.totalFiles}`;
+}
+
+function getManagerIds(records) {
+  return Array.from(new Set(records.map((record) => record.projectId))).sort();
+}
+
+function renderUsageDetails(filteredRecords) {
+  if (!state.selectedManagerId) {
+    dom.usageSummary.textContent = "未选择管理号";
+    dom.usageList.className = "usage-list empty-state";
+    dom.usageList.textContent = "请选择管理号查看明细";
+    return;
+  }
+
+  const managerRecords = filteredRecords
+    .filter((record) => record.projectId === state.selectedManagerId)
+    .sort((a, b) => b.startTime - a.startTime);
+
+  dom.usageSummary.textContent = `${state.selectedManagerId} · ${managerRecords.length} 条记录`;
+
+  if (managerRecords.length === 0) {
+    dom.usageList.className = "usage-list empty-state";
+    dom.usageList.textContent = "当前筛选条件下没有使用记录";
+    return;
+  }
+
+  dom.usageList.className = "usage-list";
+  dom.usageList.innerHTML = `
+    <table class="usage-table">
+      <thead>
+        <tr>
+          <th>使用人</th>
+          <th>起始时间</th>
+          <th>结束时间</th>
+          <th>状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${managerRecords
+          .map(
+            (record) => `
+              <tr>
+                <td>${escapeHtml(record.user)}</td>
+                <td>${formatDateTime(record.startTime)}</td>
+                <td>${formatDateTime(record.endTime)}</td>
+                <td><span class="usage-state ${record.isSuccess ? "success" : "fail"}">${record.state}</span></td>
+              </tr>
+            `
+          )
+          .join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function formatDateTime(date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  const hours = `${date.getHours()}`.padStart(2, "0");
+  const minutes = `${date.getMinutes()}`.padStart(2, "0");
+  const seconds = `${date.getSeconds()}`.padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
