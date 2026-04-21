@@ -21,54 +21,9 @@ body {
   margin: 0;
   font-family: "Chivo", sans-serif;
   color: var(--text);
-  background: linear-gradient(160deg, #edf4dd 0%, #f2f4ee 52%, #ece4da 100%);
+  background: #ffffff;
   min-height: 100vh;
   position: relative;
-}
-
-.background-shape {
-  position: fixed;
-  z-index: -1;
-  border-radius: 999px;
-  filter: blur(2px);
-}
-
-.shape-a {
-  width: 320px;
-  height: 320px;
-  left: -80px;
-  top: -60px;
-  background: radial-gradient(circle at 30% 30%, #d5f0ca, #b0d7ac);
-  animation: driftA 12s ease-in-out infinite;
-}
-
-.shape-b {
-  width: 280px;
-  height: 280px;
-  right: -40px;
-  top: 100px;
-  background: radial-gradient(circle at 20% 20%, #ffd6bf, #f0bfa0);
-  animation: driftB 14s ease-in-out infinite;
-}
-
-@keyframes driftA {
-  0%,
-  100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(18px);
-  }
-}
-
-@keyframes driftB {
-  0%,
-  100% {
-    transform: translateX(0px);
-  }
-  50% {
-    transform: translateX(-22px);
-  }
 }
 
 .topbar {
@@ -195,7 +150,7 @@ select {
   min-height: 120px;
 }
 
-.project-item {
+.tool-item {
   display: flex;
   gap: 8px;
   align-items: center;

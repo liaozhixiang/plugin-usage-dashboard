@@ -1,8 +1,8 @@
 const state = {
   records: [],
-  rawProjects: new Set(),
-  selectedProjects: new Set(),
-  tools: new Set(),
+  toolEntries: new Map(),
+  selectedTools: new Set(),
+  parsedCache: new Map(),
   badLineCount: 0,
   totalFiles: 0,
   processedFiles: 0,
@@ -16,11 +16,11 @@ const state = {
 const dom = {
   pickFolderBtn: document.getElementById("pick-folder-btn"),
   folderInput: document.getElementById("folder-input"),
-  projectSearch: document.getElementById("project-search"),
-  projectList: document.getElementById("project-list"),
-  selectAllProjects: document.getElementById("select-all-projects"),
-  clearProjects: document.getElementById("clear-projects"),
-  toolFilter: document.getElementById("tool-filter"),
+  toolSearch: document.getElementById("tool-search"),
+  toolList: document.getElementById("tool-list"),
+  selectAllTools: document.getElementById("select-all-tools"),
+  clearTools: document.getElementById("clear-tools"),
+  analyzeTools: document.getElementById("analyze-tools"),
   dateFrom: document.getElementById("date-from"),
   dateTo: document.getElementById("date-to"),
   applyFilter: document.getElementById("apply-filter"),
@@ -38,18 +38,17 @@ const dom = {
 
 dom.pickFolderBtn.addEventListener("click", pickFolder);
 dom.folderInput.addEventListener("change", handleFolderUpload);
-dom.projectSearch.addEventListener("input", renderProjectList);
-dom.selectAllProjects.addEventListener("click", () => {
-  state.selectedProjects = new Set(state.rawProjects);
-  renderProjectList();
-  refreshDashboard();
+dom.toolSearch.addEventListener("input", renderToolList);
+dom.selectAllTools.addEventListener("click", () => {
+  state.selectedTools = new Set(state.toolEntries.keys());
+  renderToolList();
 });
-dom.clearProjects.addEventListener("click", () => {
-  state.selectedProjects.clear();
-  renderProjectList();
-  refreshDashboard();
+dom.clearTools.addEventListener("click", () => {
+  state.selectedTools.clear();
+  renderToolList();
 });
 dom.applyFilter.addEventListener("click", refreshDashboard);
+dom.analyzeTools.addEventListener("click", analyzeSelectedTools);
 
 async function pickFolder() {
   if (!window.showDirectoryPicker) {
@@ -62,15 +61,15 @@ async function pickFolder() {
     setStatus("正在读取文件夹...");
 
     const dirHandle = await window.showDirectoryPicker();
-    const files = [];
+    const handles = [];
 
     for await (const entry of dirHandle.values()) {
       if (entry.kind === "file" && entry.name.toLowerCase().endsWith(".txt")) {
-        files.push(entry);
+        handles.push(entry);
       }
     }
 
-    await consumeFileHandles(files);
+    await registerFileHandles(handles);
   } catch (error) {
     if (error && error.name === "AbortError") {
       setStatus("已取消选择文件夹。");
@@ -91,41 +90,113 @@ async function handleFolderUpload(event) {
   }
 
   resetData();
-  setStatus("兼容模式读取中...");
+  setStatus("兼容模式读取文件名中...");
 
-  await consumePlainFiles(files);
+  await registerPlainFiles(files);
 }
 
-async function consumeFileHandles(handles) {
+async function registerFileHandles(handles) {
+  resetRuntimeForFolder();
   state.totalFiles = handles.length;
-  updateProgress();
+  state.processedFiles = handles.length;
 
   for (const handle of handles) {
-    const file = await handle.getFile();
-    await parseTextFile(file.name, await file.text());
-    state.processedFiles += 1;
-    updateProgress();
+    const toolName = normalizeToolName(handle.name);
+    state.toolEntries.set(toolName, { source: "handle", ref: handle });
   }
 
-  finalizeLoad();
+  finalizeRegistration();
 }
 
-async function consumePlainFiles(files) {
+async function registerPlainFiles(files) {
+  resetRuntimeForFolder();
   state.totalFiles = files.length;
-  updateProgress();
+  state.processedFiles = files.length;
 
   for (const file of files) {
-    await parseTextFile(file.name, await file.text());
+    const toolName = normalizeToolName(file.name);
+    state.toolEntries.set(toolName, { source: "file", ref: file });
+  }
+
+  finalizeRegistration();
+}
+
+function normalizeToolName(filename) {
+  return filename.replace(/\.txt$/i, "");
+}
+
+function finalizeRegistration() {
+  state.selectedTools = new Set(state.toolEntries.keys());
+  updateProgress();
+  renderToolList();
+  resetDashboard();
+  setStatus(`已读取 ${state.totalFiles} 个 txt 文件名，请选择工具后点击“分析所选工具”。`);
+}
+
+function resetRuntimeForFolder() {
+  state.records = [];
+  state.parsedCache.clear();
+  state.badLineCount = 0;
+  state.totalFiles = 0;
+  state.processedFiles = 0;
+}
+
+async function analyzeSelectedTools() {
+  const tools = Array.from(state.selectedTools);
+  if (tools.length === 0) {
+    setStatus("请先至少选择一个 NX 工具。");
+    resetDashboard();
+    return;
+  }
+
+  state.records = [];
+  state.badLineCount = 0;
+  state.totalFiles = tools.length;
+  state.processedFiles = 0;
+  updateProgress();
+  setStatus("正在按所选工具解析 txt 数据...");
+
+  for (const toolName of tools) {
+    const cached = state.parsedCache.get(toolName);
+    if (cached) {
+      state.records.push(...cached.records);
+      state.badLineCount += cached.badLineCount;
+      state.processedFiles += 1;
+      updateProgress();
+      continue;
+    }
+
+    const entry = state.toolEntries.get(toolName);
+    if (!entry) {
+      state.processedFiles += 1;
+      updateProgress();
+      continue;
+    }
+
+    let content = "";
+    if (entry.source === "handle") {
+      const file = await entry.ref.getFile();
+      content = await file.text();
+    } else {
+      content = await entry.ref.text();
+    }
+
+    const result = parseTextContent(toolName, content);
+    state.parsedCache.set(toolName, result);
+    state.records.push(...result.records);
+    state.badLineCount += result.badLineCount;
+
     state.processedFiles += 1;
     updateProgress();
   }
 
-  finalizeLoad();
+  refreshDashboard();
+  setStatus(`分析完成，已解析 ${tools.length} 个工具。`);
 }
 
-async function parseTextFile(filename, content) {
-  const toolName = filename.replace(/\.txt$/i, "");
-  state.tools.add(toolName);
+function parseTextContent(toolName, content) {
+  const records = [];
+  let badLineCount = 0;
 
   const lines = content.split(/\r?\n/);
 
@@ -137,7 +208,7 @@ async function parseTextFile(filename, content) {
 
     const parts = trimmed.split(",").map((segment) => segment.trim());
     if (parts.length < 5) {
-      state.badLineCount += 1;
+      badLineCount += 1;
       continue;
     }
 
@@ -147,13 +218,13 @@ async function parseTextFile(filename, content) {
     const normalizedState = (stateRaw || "").toLowerCase();
 
     if (!user || !projectId || !startTime || !endTime) {
-      state.badLineCount += 1;
+      badLineCount += 1;
       continue;
     }
 
     const durationMs = endTime.getTime() - startTime.getTime();
     if (durationMs < 0) {
-      state.badLineCount += 1;
+      badLineCount += 1;
       continue;
     }
 
@@ -161,7 +232,7 @@ async function parseTextFile(filename, content) {
     const isFail = normalizedState === "fail";
 
     if (!isSuccess && !isFail) {
-      state.badLineCount += 1;
+      badLineCount += 1;
       continue;
     }
 
@@ -177,9 +248,10 @@ async function parseTextFile(filename, content) {
       durationMs,
     };
 
-    state.records.push(record);
-    state.rawProjects.add(projectId);
+    records.push(record);
   }
+
+  return { records, badLineCount };
 }
 
 function parseTimestamp(text) {
@@ -197,77 +269,70 @@ function formatDateKey(date) {
 
 function resetData() {
   state.records = [];
-  state.rawProjects = new Set();
-  state.selectedProjects = new Set();
-  state.tools = new Set();
+  state.toolEntries = new Map();
+  state.selectedTools = new Set();
+  state.parsedCache = new Map();
   state.badLineCount = 0;
   state.totalFiles = 0;
   state.processedFiles = 0;
   dom.folderInput.value = "";
-  clearToolFilter();
+  resetDashboard();
+  renderToolList();
 }
 
-function clearToolFilter() {
-  dom.toolFilter.innerHTML = '<option value="ALL">全部工具</option>';
-}
-
-function finalizeLoad() {
-  state.selectedProjects = new Set(state.rawProjects);
-  populateToolFilter();
-  renderProjectList();
-  refreshDashboard();
-  setStatus(`加载完成，共读取 ${state.totalFiles} 个文件。`);
-}
-
-function populateToolFilter() {
-  clearToolFilter();
-  const tools = Array.from(state.tools).sort();
-  for (const tool of tools) {
-    const option = document.createElement("option");
-    option.value = tool;
-    option.textContent = tool;
-    dom.toolFilter.appendChild(option);
-  }
-}
-
-function renderProjectList() {
-  const keyword = dom.projectSearch.value.trim().toLowerCase();
-  const projects = Array.from(state.rawProjects)
+function renderToolList() {
+  const keyword = dom.toolSearch.value.trim().toLowerCase();
+  const tools = Array.from(state.toolEntries.keys())
     .sort()
-    .filter((project) => project.toLowerCase().includes(keyword));
+    .filter((tool) => tool.toLowerCase().includes(keyword));
 
-  if (projects.length === 0) {
-    dom.projectList.classList.add("empty");
-    dom.projectList.textContent = "无匹配项目";
+  if (tools.length === 0) {
+    dom.toolList.classList.add("empty");
+    dom.toolList.textContent = state.toolEntries.size === 0 ? "请先选择文件夹" : "无匹配工具";
     return;
   }
 
-  dom.projectList.classList.remove("empty");
-  dom.projectList.innerHTML = "";
+  dom.toolList.classList.remove("empty");
+  dom.toolList.innerHTML = "";
 
-  for (const project of projects) {
+  for (const tool of tools) {
     const label = document.createElement("label");
-    label.className = "project-item";
+    label.className = "tool-item";
 
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
-    checkbox.checked = state.selectedProjects.has(project);
+    checkbox.checked = state.selectedTools.has(tool);
     checkbox.addEventListener("change", () => {
       if (checkbox.checked) {
-        state.selectedProjects.add(project);
+        state.selectedTools.add(tool);
       } else {
-        state.selectedProjects.delete(project);
+        state.selectedTools.delete(tool);
       }
-      refreshDashboard();
     });
 
     const text = document.createElement("span");
-    text.textContent = project;
+    text.textContent = tool;
 
     label.appendChild(checkbox);
     label.appendChild(text);
-    dom.projectList.appendChild(label);
+    dom.toolList.appendChild(label);
   }
+}
+
+function resetDashboard() {
+  state.records = [];
+  state.badLineCount = 0;
+  dom.validCount.textContent = "0";
+  dom.badCount.textContent = "0";
+  dom.kpiTotal.textContent = "0";
+  dom.kpiSuccessRate.textContent = "0%";
+  dom.kpiAvgDuration.textContent = "0 分钟";
+  dom.kpiActiveUsers.textContent = "0";
+  dom.kpiP90Duration.textContent = "0 分钟";
+  dom.kpiDailyAvg.textContent = "0";
+  renderDailyChart([]);
+  renderToolSuccessChart([]);
+  renderProjectDurationChart([]);
 }
 
 function refreshDashboard() {
@@ -291,17 +356,8 @@ function refreshDashboard() {
 function getFilteredRecords() {
   const from = dom.dateFrom.value ? new Date(`${dom.dateFrom.value}T00:00:00`) : null;
   const to = dom.dateTo.value ? new Date(`${dom.dateTo.value}T23:59:59`) : null;
-  const tool = dom.toolFilter.value;
 
   return state.records.filter((record) => {
-    if (state.selectedProjects.size > 0 && !state.selectedProjects.has(record.projectId)) {
-      return false;
-    }
-
-    if (tool !== "ALL" && record.tool !== tool) {
-      return false;
-    }
-
     if (from && record.startTime < from) {
       return false;
     }

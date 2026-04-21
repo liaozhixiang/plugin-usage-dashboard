@@ -9,13 +9,10 @@
     <script src="app.js" defer></script>
   </head>
   <body>
-    <div class="background-shape shape-a"></div>
-    <div class="background-shape shape-b"></div>
-
     <header class="topbar">
       <div class="title-wrap">
         <h1>NX Plugin Usage Dashboard</h1>
-        <p>本地读取 TXT 使用记录，实时分析项目与工具使用情况</p>
+        <p>先读取 TXT 文件名，再按所选 NX 工具分析数据</p>
       </div>
       <div class="actions">
         <button id="pick-folder-btn" class="primary">选择数据文件夹</button>
@@ -29,26 +26,23 @@
     <main class="layout">
       <aside class="sidebar">
         <section class="panel">
-          <h2>项目筛选</h2>
-          <input id="project-search" type="text" placeholder="搜索项目ID" />
+          <h2>NX 工具选择</h2>
+          <input id="tool-search" type="text" placeholder="搜索工具名" />
           <div class="panel-row">
-            <button id="select-all-projects" class="ghost">全选</button>
-            <button id="clear-projects" class="ghost">清空</button>
+            <button id="select-all-tools" class="ghost">全选</button>
+            <button id="clear-tools" class="ghost">清空</button>
           </div>
-          <div id="project-list" class="list-box empty">请先选择文件夹</div>
+          <div id="tool-list" class="list-box empty">请先选择文件夹</div>
+          <button id="analyze-tools" class="primary block">分析所选工具</button>
         </section>
 
         <section class="panel compact">
           <h2>筛选条件</h2>
-          <label for="tool-filter">工具</label>
-          <select id="tool-filter">
-            <option value="ALL">全部工具</option>
-          </select>
           <label for="date-from">开始日期</label>
           <input id="date-from" type="date" />
           <label for="date-to">结束日期</label>
           <input id="date-to" type="date" />
-          <button id="apply-filter" class="primary block">应用筛选</button>
+          <button id="apply-filter" class="primary block">应用日期筛选</button>
         </section>
       </aside>
 
