@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NX Plugin Usage Dashboard</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" defer></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <div class="background-shape shape-a"></div>
+    <div class="background-shape shape-b"></div>
+
+    <header class="topbar">
+      <div class="title-wrap">
+        <h1>NX Plugin Usage Dashboard</h1>
+        <p>本地读取 TXT 使用记录，实时分析项目与工具使用情况</p>
+      </div>
+      <div class="actions">
+        <button id="pick-folder-btn" class="primary">选择数据文件夹</button>
+        <label class="fallback-upload" title="仅在不支持文件夹API时使用">
+          <input id="folder-input" type="file" webkitdirectory directory multiple hidden />
+          上传文件夹(兼容模式)
+        </label>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <section class="panel">
+          <h2>项目筛选</h2>
+          <input id="project-search" type="text" placeholder="搜索项目ID" />
+          <div class="panel-row">
+            <button id="select-all-projects" class="ghost">全选</button>
+            <button id="clear-projects" class="ghost">清空</button>
+          </div>
+          <div id="project-list" class="list-box empty">请先选择文件夹</div>
+        </section>
+
+        <section class="panel compact">
+          <h2>筛选条件</h2>
+          <label for="tool-filter">工具</label>
+          <select id="tool-filter">
+            <option value="ALL">全部工具</option>
+          </select>
+          <label for="date-from">开始日期</label>
+          <input id="date-from" type="date" />
+          <label for="date-to">结束日期</label>
+          <input id="date-to" type="date" />
+          <button id="apply-filter" class="primary block">应用筛选</button>
+        </section>
+      </aside>
+
+      <section class="content">
+        <section class="status-bar panel">
+          <div><strong>状态:</strong> <span id="status-text">等待加载数据</span></div>
+          <div><strong>文件:</strong> <span id="file-progress">0 / 0</span></div>
+          <div><strong>有效记录:</strong> <span id="valid-count">0</span></div>
+          <div><strong>坏行:</strong> <span id="bad-count">0</span></div>
+        </section>
+
+        <section class="kpi-grid">
+          <article class="kpi-card">
+            <p>总记录数</p>
+            <h3 id="kpi-total">0</h3>
+          </article>
+          <article class="kpi-card">
+            <p>成功率</p>
+            <h3 id="kpi-success-rate">0%</h3>
+          </article>
+          <article class="kpi-card">
+            <p>成功平均时长</p>
+            <h3 id="kpi-avg-duration">0 分钟</h3>
+          </article>
+          <article class="kpi-card">
+            <p>活跃用户数</p>
+            <h3 id="kpi-active-users">0</h3>
+          </article>
+          <article class="kpi-card">
+            <p>P90 使用时长</p>
+            <h3 id="kpi-p90-duration">0 分钟</h3>
+          </article>
+          <article class="kpi-card">
+            <p>平均每日使用次数</p>
+            <h3 id="kpi-daily-avg">0</h3>
+          </article>
+        </section>
+
+        <section class="chart-grid">
+          <article class="panel chart-panel">
+            <h2>日使用频率</h2>
+            <canvas id="daily-frequency-chart"></canvas>
+          </article>
+          <article class="panel chart-panel">
+            <h2>工具成功率</h2>
+            <canvas id="tool-success-chart"></canvas>
+          </article>
+          <article class="panel chart-panel">
+            <h2>项目总时长 Top 10</h2>
+            <canvas id="project-duration-chart"></canvas>
+          </article>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>
