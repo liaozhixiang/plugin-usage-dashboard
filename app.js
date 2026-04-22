@@ -17,6 +17,8 @@ const state = {
 const dom = {
   pickFolderBtn: document.getElementById("pick-folder-btn"),
   folderInput: document.getElementById("folder-input"),
+  loadingOverlay: document.getElementById("loading-overlay"),
+  loadingText: document.getElementById("loading-text"),
   toolSearch: document.getElementById("tool-search"),
   toolList: document.getElementById("tool-list"),
   managerList: document.getElementById("manager-list"),
@@ -55,10 +57,10 @@ const centerTextPlugin = {
     ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "#104a3c";
+  ctx.fillStyle = getThemeColor("--accent-strong", "#0b4da1");
     ctx.font = "700 28px Space Grotesk";
     ctx.fillText(text, point.x, point.y - 6);
-    ctx.fillStyle = "#5a6650";
+  ctx.fillStyle = getThemeColor("--muted", "#4c6785");
     ctx.font = "400 12px Chivo";
     ctx.fillText("成功率", point.x, point.y + 18);
     ctx.restore();
@@ -184,37 +186,59 @@ async function analyzeSelectedTools() {
   setStatus(`正在解析 ${toolName} 的 txt 数据...`);
 
   const cached = state.parsedCache.get(toolName);
-  if (cached) {
-    state.records = [...cached.records];
-    state.badLineCount = cached.badLineCount;
-    state.processedFiles += 1;
-    updateProgress();
-  } else {
-    const entry = state.toolEntries.get(toolName);
-    if (entry) {
-      let content = "";
-      if (entry.source === "handle") {
-        const file = await entry.ref.getFile();
-        content = await file.text();
-      } else {
-        content = await entry.ref.text();
-      }
+  const shouldShowLoading = !cached;
 
-      const result = parseTextContent(toolName, content);
-      state.parsedCache.set(toolName, result);
-      state.records = [...result.records];
-      state.badLineCount = result.badLineCount;
+  try {
+    if (shouldShowLoading) {
+      showLoading(`正在读取 ${toolName}.txt 并生成看板...`);
     }
 
-    state.processedFiles = 1;
-    updateProgress();
-  }
+    if (cached) {
+      state.records = [...cached.records];
+      state.badLineCount = cached.badLineCount;
+      state.processedFiles += 1;
+      updateProgress();
+    } else {
+      const entry = state.toolEntries.get(toolName);
+      if (entry) {
+        let content = "";
+        if (entry.source === "handle") {
+          const file = await entry.ref.getFile();
+          content = await file.text();
+        } else {
+          content = await entry.ref.text();
+        }
 
-  const managerIds = getManagerIds(state.records);
-  state.selectedManagerId = managerIds[0] || null;
-  renderManagerList(managerIds);
-  refreshDashboard();
-  setStatus(`分析完成，当前工具为 ${toolName}。`);
+        const result = parseTextContent(toolName, content);
+        state.parsedCache.set(toolName, result);
+        state.records = [...result.records];
+        state.badLineCount = result.badLineCount;
+      }
+
+      state.processedFiles = 1;
+      updateProgress();
+    }
+
+    const managerIds = getManagerIds(state.records);
+    state.selectedManagerId = managerIds[0] || null;
+    renderManagerList(managerIds);
+    refreshDashboard();
+    setStatus(`分析完成，当前工具为 ${toolName}。`);
+  } catch (error) {
+    state.selectedManagerId = null;
+    state.records = [];
+    state.badLineCount = 0;
+    state.processedFiles = 0;
+    updateProgress();
+    renderManagerList([]);
+    renderUsageDetails([]);
+    resetDashboard();
+    setStatus(`分析失败: ${error.message || "未知错误"}`);
+  } finally {
+    if (shouldShowLoading) {
+      hideLoading();
+    }
+  }
 }
 
 function parseTextContent(toolName, content) {
@@ -278,9 +302,33 @@ function parseTextContent(toolName, content) {
 }
 
 function parseTimestamp(text) {
-  const normalized = text.includes("T") ? text : text.replace(" ", "T");
+  const normalized = normalizeTimestampInput(text);
   const timestamp = new Date(normalized);
   return Number.isNaN(timestamp.getTime()) ? null : timestamp;
+}
+
+function normalizeTimestampInput(text) {
+  const value = String(text || "").trim();
+  if (!value) {
+    return "";
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/.test(value)) {
+    return value;
+  }
+
+  const match = value.match(
+    /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/
+  );
+
+  if (!match) {
+    return value.includes("T") ? value : value.replace(" ", "T");
+  }
+
+  const [, year, month, day, hour = "0", minute = "0", second = "0"] = match;
+  const normalizedDate = [year, month.padStart(2, "0"), day.padStart(2, "0")].join("-");
+  const normalizedTime = [hour, minute, second].map((part) => part.padStart(2, "0")).join(":");
+  return `${normalizedDate}T${normalizedTime}`;
 }
 
 function formatDateKey(date) {
@@ -531,6 +579,9 @@ function renderDailyChart(data, successData) {
   const labels = data.map((item) => item.date);
   const values = data.map((item) => item.count);
   const successValues = successData.map((item) => item.count);
+  const accent = getThemeColor("--accent", "#0a66d1");
+  const accentSoft = getThemeColor("--accent-soft", "#d9e9ff");
+  const accentMuted = getThemeColor("--accent-muted", "#6f98d0");
 
   const config = {
     type: "line",
@@ -540,16 +591,16 @@ function renderDailyChart(data, successData) {
         {
           label: "使用次数",
           data: values,
-          borderColor: "#256d5a",
-          backgroundColor: "rgba(37, 109, 90, 0.2)",
+          borderColor: accent,
+          backgroundColor: hexToRgba(accent, 0.18),
           tension: 0.2,
           fill: true,
         },
         {
           label: "成功次数",
           data: successValues,
-          borderColor: "#c97940",
-          backgroundColor: "rgba(201, 121, 64, 0.12)",
+          borderColor: accentMuted,
+          backgroundColor: hexToRgba(accentSoft, 0.32),
           tension: 0.2,
           fill: false,
         },
@@ -564,6 +615,8 @@ function renderDailyChart(data, successData) {
 function renderToolSuccessChart(rate) {
   const safeRate = Math.max(0, Math.min(100, Number(rate) || 0));
   const remainder = Math.max(0, 100 - safeRate);
+  const accent = getThemeColor("--accent", "#0a66d1");
+  const accentSoft = getThemeColor("--accent-soft", "#d9e9ff");
 
   const config = {
     type: "doughnut",
@@ -572,7 +625,7 @@ function renderToolSuccessChart(rate) {
       datasets: [
         {
           data: [safeRate, remainder],
-          backgroundColor: ["#256d5a", "#e6ebe0"],
+          backgroundColor: [accent, accentSoft],
           borderWidth: 0,
           cutout: "76%",
           circumference: 360,
@@ -606,6 +659,7 @@ function renderToolSuccessChart(rate) {
 function renderProjectDurationChart(data) {
   const labels = data.map((item) => item.projectId);
   const values = data.map((item) => (item.duration / 3600000).toFixed(2));
+  const accent = getThemeColor("--accent", "#0a66d1");
 
   const config = {
     type: "bar",
@@ -615,8 +669,8 @@ function renderProjectDurationChart(data) {
         {
           label: "总时长(小时)",
           data: values,
-          backgroundColor: "rgba(201, 121, 64, 0.75)",
-          borderRadius: 8,
+          backgroundColor: hexToRgba(accent, 0.82),
+          borderRadius: 0,
         },
       ],
     },
@@ -631,6 +685,10 @@ function renderProjectDurationChart(data) {
 }
 
 function chartOptions(maxY) {
+  const textColor = getThemeColor("--text", "#173456");
+  const muted = getThemeColor("--muted", "#4c6785");
+  const border = getThemeColor("--border", "#b7cdec");
+
   const yConfig = maxY
     ? {
         beginAtZero: true,
@@ -651,27 +709,49 @@ function chartOptions(maxY) {
       legend: {
         display: true,
         labels: {
-          color: "#32412a",
+          color: textColor,
         },
       },
     },
     scales: {
       x: {
         ticks: {
-          color: "#475744",
+          color: muted,
         },
         grid: {
           display: false,
+          borderColor: border,
         },
       },
       y: {
         ...yConfig,
         ticks: {
-          color: "#475744",
+          color: muted,
+        },
+        grid: {
+          color: hexToRgba(border, 0.7),
         },
       },
     },
   };
+}
+
+function getThemeColor(name, fallback) {
+  const value = window.getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
+
+function hexToRgba(hex, alpha) {
+  const normalized = hex.replace("#", "").trim();
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(10, 102, 209, ${alpha})`;
+  }
+
+  const value = Number.parseInt(normalized, 16);
+  const red = (value >> 16) & 255;
+  const green = (value >> 8) & 255;
+  const blue = value & 255;
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
 function upsertChart(canvasId, existingChart, config) {
@@ -689,6 +769,22 @@ function setStatus(message) {
 
 function updateProgress() {
   dom.fileProgress.textContent = `${state.processedFiles} / ${state.totalFiles}`;
+}
+
+function showLoading(message) {
+  if (dom.loadingText) {
+    dom.loadingText.textContent = message || "正在读取 TXT 数据...";
+  }
+
+  document.body.classList.add("is-loading");
+  document.body.setAttribute("aria-busy", "true");
+  dom.loadingOverlay?.setAttribute("aria-hidden", "false");
+}
+
+function hideLoading() {
+  document.body.classList.remove("is-loading");
+  document.body.removeAttribute("aria-busy");
+  dom.loadingOverlay?.setAttribute("aria-hidden", "true");
 }
 
 function getManagerIds(records) {

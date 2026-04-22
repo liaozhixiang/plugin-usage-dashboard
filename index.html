@@ -9,6 +9,13 @@
     <script src="app.js" defer></script>
   </head>
   <body>
+    <div id="loading-overlay" class="loading-overlay" aria-hidden="true">
+      <div class="loading-panel" role="status" aria-live="polite">
+        <div class="loading-spinner" aria-hidden="true"></div>
+        <p id="loading-text">正在读取 TXT 数据...</p>
+      </div>
+    </div>
+
     <header class="topbar">
       <div class="title-wrap">
         <h1>NX Plugin Usage Dashboard</h1>
