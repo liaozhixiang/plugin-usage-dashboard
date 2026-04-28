@@ -1,0 +1,43 @@
+{
+  "name": "plugin-usage-dashboard",
+  "version": "1.0.0",
+  "description": "NX Plugin Usage Dashboard — Windows desktop app",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64",
+    "build:dir": "electron-builder --win --x64 --dir"
+  },
+  "build": {
+    "appId": "com.plugin-usage-dashboard",
+    "productName": "NX Plugin Usage Dashboard",
+    "copyright": "Copyright © 2026",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerLanguages": ["zh_CN", "en_US"],
+      "language": "2052"
+    },
+    "files": [
+      "**/*",
+      "!node_modules/**",
+      "!dist/**",
+      "!.git/**"
+    ]
+  },
+  "devDependencies": {
+    "electron": "39.8.1",
+    "electron-builder": "25.1.8"
+  }
+}

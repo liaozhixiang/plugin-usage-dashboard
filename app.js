@@ -75,6 +75,22 @@ dom.toolSearch.addEventListener("input", renderToolList);
 dom.applyFilter.addEventListener("click", refreshDashboard);
 
 async function pickFolder() {
+  if (window.electronAPI) {
+    try {
+      resetData();
+      setStatus("正在读取文件夹...");
+      const files = await window.electronAPI.selectFolder();
+      if (!files) {
+        setStatus("已取消选择文件夹。");
+        return;
+      }
+      await registerElectronFiles(files);
+    } catch (error) {
+      setStatus(`读取失败: ${error.message || "未知错误"}`);
+    }
+    return;
+  }
+
   if (!window.showDirectoryPicker) {
     setStatus("当前浏览器不支持目录选择API，请使用兼容模式上传。");
     return;
@@ -101,6 +117,19 @@ async function pickFolder() {
     }
     setStatus(`读取失败: ${error.message || "未知错误"}`);
   }
+}
+
+async function registerElectronFiles(files) {
+  resetRuntimeForFolder();
+  state.totalFiles = files.length;
+  state.processedFiles = files.length;
+
+  for (const file of files) {
+    const toolName = normalizeToolName(file.name);
+    state.toolEntries.set(toolName, { source: "electron", ref: file.filePath });
+  }
+
+  finalizeRegistration();
 }
 
 async function handleFolderUpload(event) {
@@ -205,6 +234,8 @@ async function analyzeSelectedTools() {
         if (entry.source === "handle") {
           const file = await entry.ref.getFile();
           content = await file.text();
+        } else if (entry.source === "electron") {
+          content = await window.electronAPI.readFile(entry.ref);
         } else {
           content = await entry.ref.text();
         }
