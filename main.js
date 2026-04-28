@@ -73,7 +73,8 @@ ipcMain.handle("fs:readFile", async (_event, filePath) => {
   }
   const resolved = path.resolve(filePath);
   const allowedResolved = path.resolve(allowedFolder);
-  if (!resolved.startsWith(allowedResolved + path.sep) && resolved !== allowedResolved) {
+  const relative = path.relative(allowedResolved, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new Error("Access denied: file is outside the selected folder");
   }
   return fs.readFileSync(resolved, "utf-8");
