@@ -4,6 +4,8 @@ const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs");
 
+let allowedFolder = null;
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
@@ -56,6 +58,8 @@ ipcMain.handle("dialog:selectFolder", async () => {
     return null;
   }
 
+  allowedFolder = folderPath;
+
   const txtFiles = entries
     .filter((name) => name.toLowerCase().endsWith(".txt"))
     .map((name) => ({ name, filePath: path.join(folderPath, name) }));
@@ -64,6 +68,13 @@ ipcMain.handle("dialog:selectFolder", async () => {
 });
 
 ipcMain.handle("fs:readFile", async (_event, filePath) => {
+  if (!allowedFolder) {
+    throw new Error("No folder selected");
+  }
   const resolved = path.resolve(filePath);
+  const allowedResolved = path.resolve(allowedFolder);
+  if (!resolved.startsWith(allowedResolved + path.sep) && resolved !== allowedResolved) {
+    throw new Error("Access denied: file is outside the selected folder");
+  }
   return fs.readFileSync(resolved, "utf-8");
 });

@@ -30,10 +30,12 @@
       "language": "2052"
     },
     "files": [
-      "**/*",
-      "!node_modules/**",
-      "!dist/**",
-      "!.git/**"
+      "index.html",
+      "styles.css",
+      "app.js",
+      "main.js",
+      "preload.js",
+      "vendor/**"
     ]
   },
   "devDependencies": {
